@@ -128,7 +128,8 @@ def _union_find(rects, pad=1.0):
 
 
 def detect_regions(page, W, H, ncols):
-    prims = []  # (rect, kind) kind: h, v, fill, rect
+    prims = []  # 괘선 (rect, kind) kind: h, v, rect
+    fills_all = []  # 채움 도형: 괘선 묶음 안에 든 것만 fills 로 센다(배경 음영만으로는 표가 아님)
     curves = []
     try:
         drawings = page.get_drawings()
@@ -143,8 +144,14 @@ def detect_regions(page, W, H, ncols):
             if r.width >= 30 and r.height >= 30:
                 curves.append((r.x0, r.y0, r.x1, r.y1))
             continue
-        filled = d.get("fill") is not None and "f" in (d.get("type") or "")
-        stroked = "s" in (d.get("type") or "")
+        dtype = d.get("type") or ""
+        filled = d.get("fill") is not None and "f" in dtype
+        stroked = "s" in dtype
+        if filled and not stroked:
+            # 채움만 있는 도형(배경 음영): 선으로 세지 않고 채움 1개로만 본다
+            if r.width >= 2.5 and r.height >= 2.5:
+                fills_all.append((r.x0, r.y0, r.x1, r.y1))
+            continue
         for it in d["items"]:
             if it[0] == "l":
                 p1, p2 = it[1], it[2]
@@ -163,12 +170,9 @@ def detect_regions(page, W, H, ncols):
             elif w < 2.5 and h > 6:
                 prims.append((rr, "v"))
             elif w >= 2.5 and h >= 2.5:
-                if filled and not stroked:
-                    prims.append((rr, "fill"))
-                elif stroked:
-                    prims.append((rr, "rect"))
-                    if filled:
-                        prims.append((rr, "fill"))
+                prims.append((rr, "rect"))
+                if filled:
+                    fills_all.append(rr)
     col_h = FOOT * H - TOP
     regions = []
     leftovers = 0
@@ -178,19 +182,22 @@ def detect_regions(page, W, H, ncols):
             hy, vx, fills = set(), set(), 0
             x0 = min(prims[i][0][0] for i in g); y0 = min(prims[i][0][1] for i in g)
             x1 = max(prims[i][0][2] for i in g); y1 = max(prims[i][0][3] for i in g)
+            for fr in fills_all:
+                cx, cy = (fr[0] + fr[2]) / 2, (fr[1] + fr[3]) / 2
+                if (x0 - 1 <= cx <= x1 + 1 and y0 - 1 <= cy <= y1 + 1
+                        and (fr[2] - fr[0]) * (fr[3] - fr[1]) <= (x1 - x0 + 2) * (y1 - y0 + 2)):
+                    fills += 1
             for i in g:
                 rr, k = prims[i]
                 if k == "h":
                     hy.add(round((rr[1] + rr[3]) / 2))
                 elif k == "v":
                     vx.add(round((rr[0] + rr[2]) / 2))
-                elif k == "fill":
-                    fills += 1
                 elif k == "rect":
                     hy.add(round(rr[1])); hy.add(round(rr[3])); vx.add(round(rr[0])); vx.add(round(rr[2]))
             bw, bh = x1 - x0, y1 - y0
             typ = None
-            if len(hy) <= 2 and len(vx) <= 2 and fills == 0:
+            if len(hy) <= 2 and len(vx) <= 2 and fills < 3:
                 if bw > 8 and bh > 6 and not (bw > 0.6 * W and bh > col_h * 0.8):
                     typ = "박스"
             elif (len(hy) >= 3 and len(vx) >= 2) or (len(hy) >= 2 and len(vx) >= 3) or fills >= 3:
