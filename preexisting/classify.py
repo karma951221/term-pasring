@@ -50,8 +50,12 @@ DECISIONS = []  # (질문, 답, [코드]) — 사용자 답을 받으면 추가�
 DEC_PATH = os.path.join(D, "work", "decisions.json")
 if os.path.exists(DEC_PATH):
     for q, a, codes, cls in json.load(open(DEC_PATH, encoding="utf-8")):
+        if not any(k in C for k in codes):
+            continue
         DECISIONS.append((q, a, codes))
         for k in codes:
+            if k not in C:  # 10/31 신규 대표담보 결정은 final.py 에서 반영
+                continue
             t = C[k]
             C[k] = (t[0], t[1], cls, t[3], (t[4] + " · " if t[4] else "") + f"사용자 결정: {a}")
 

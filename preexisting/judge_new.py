@@ -88,11 +88,23 @@ def judge(texts):
     return "보상", (ev_yes or (texts[0] if texts else ""))
 
 
-PROP = ("손해", "화재", "도난", "임시거주비", "복구비용", "임대료", "법률비용", "차액지원", "골프", "배상", "누출")
+PROP = ("손해", "특수건물", "화재", "도난", "임시거주비", "복구비용", "임대료", "법률비용", "차액지원", "골프", "배상", "누출")
 OUTPROD = ("펫퍼민트", "실손", "저축", "연금", "모아Rich")
 for r in rows:
     if r["scope"] == "대상" and (any(k in r["cov"] for k in PROP) or (r["kind"] == "보통약관" and any(k in r["prod"] for k in OUTPROD))):
         r["scope"] = "범위 밖"
+def user_code(cov):
+    """사용자 결정(2026-11-03): 코드 미정 그룹 매칭"""
+    if "통합입통원일당" in cov:
+        return "COV000875" if "암중점치료기관" in cov else ("COV000874" if "요양병원입원포함" in cov else "")
+    if "치매주요질환입원일당" in cov and "전환용" in cov:
+        return "COV000865" if "요양병원제외" in cov else "COV000866"
+    if "체증형,10년후2배지급" in cov:  # 프리미엄 건강보험 체증형은 별도 채번 없이 기본 진단비 코드 (25%체증형만 별도 코드)
+        k = dkey(cov.replace("(체증형,10년후2배지급)", ""))
+        return dk[k].most_common(1)[0][0] if k in dk else covname.get(k, "")
+    return ""
+
+
 res = []
 for r in rows:
     if r["scope"] != "대상":
@@ -120,6 +132,8 @@ for r in rows:
         code, how = dk[k].most_common(1)[0][0], "DATA 같은 키"
     elif k in covname:
         code, how = covname[k], "담보목록 이름 일치"
+    elif user_code(r["cov"]):
+        code, how = user_code(r["cov"]), "사용자 지정"
     res.append({**r, "pay": pay, "ev": ev[:300], "where": where, "dkey": k, "affix": affix(r["cov"]), "code": code, "how": how})
 for x in res:
     if x.get("code"):
