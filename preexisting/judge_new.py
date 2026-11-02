@@ -88,7 +88,7 @@ def judge(texts):
     return "보상", (ev_yes or (texts[0] if texts else ""))
 
 
-PROP = ("손해", "특수건물", "화재", "도난", "임시거주비", "복구비용", "임대료", "법률비용", "차액지원", "골프", "배상", "누출")
+PROP = ("손해", "특수건물", "화재", "도난", "임시거주비", "복구비용", "임대료", "법률비용", "차액지원", "배상", "누출")
 OUTPROD = ("펫퍼민트", "실손", "저축", "연금", "모아Rich")
 for r in rows:
     if r["scope"] == "대상" and (any(k in r["cov"] for k in PROP) or (r["kind"] == "보통약관" and any(k in r["prod"] for k in OUTPROD))):
