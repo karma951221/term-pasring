@@ -61,31 +61,45 @@ def pay_blocks(it):
                 if on and (re.match(r"^\s*\d+\s*\.?\s*\(", t) and b["t"] in ("호", "문단") or b["t"] == "박스" and re.match(r"^[①-⑳]", t)):
                     on = False
                 if on and b["t"] not in ("박스", "표", "그림") and "자동갱신" not in t:
-                    out.append(t)
+                    out.append((b["t"], t))
             return "세부보장", out
     for b in pa["blocks"]:
         t = b.get("text", "")
         if b["t"] in ("박스", "표", "그림") or "자동갱신" in t:
             continue
-        out.append(t)
+        out.append((b["t"], t))
     return "지급사유", out
 
 
-def judge(texts):
-    """지급 문장이 있는 항마다 판정: 전부 미보상 → 미보상, 섞이면 세부보장별 상이, 없으면 보상"""
-    verdicts, ev_no, ev_yes = [], None, None
-    for t in texts:
-        sents = SENT_SPLIT.split(t)
+def judge(blocks):
+    """항 단위(소속 호·목 포함)로 판정. 전부 미보상 → 미보상, 섞이면 세부보장별 상이, 없으면 보상.
+    상해만이 트리거인 항(질병 문구 없음)은 기왕증 판정 대상이 아니라 건너뛴다."""
+    groups = []
+    for t, x in blocks:
+        if t in ("호", "목") and groups:
+            groups[-1].append(x)
+        else:
+            groups.append([x])
+    verdicts, ev_no, ev_yes, injury = [], None, None, None
+    for g in groups:
+        txt = " ".join(g)
+        sents = [s for x in g for s in SENT_SPLIT.split(x)]
         bad = next((s for s in sents if PERIOD.search(s) and DIAG.search(s)), None)
         if bad:
             verdicts.append("미보상"); ev_no = ev_no or bad.strip()
-        elif "지급" in t and PERIOD.search(t):
-            verdicts.append("보상"); ev_yes = ev_yes or next((s for s in sents if PERIOD.search(s)), t).strip()
+        elif "지급" in txt and PERIOD.search(txt):
+            if re.search(r"상해\s*(로|의\s*직접|로\s*인하여)", txt) and not re.search(r"질병\s*(으로|의\s*치료|또는)|진단\s*확정", txt):
+                injury = injury or txt
+                continue  # 상해만이 트리거인 항
+            verdicts.append("보상"); ev_yes = ev_yes or next((s for s in sents if PERIOD.search(s)), txt).strip()
     if "미보상" in verdicts and "보상" in verdicts:
         return "세부보장별 상이", f"[보상] {ev_yes} / [미보상] {ev_no}"
     if "미보상" in verdicts:
         return "미보상", ev_no
-    return "보상", (ev_yes or (texts[0] if texts else ""))
+    if not verdicts and injury:
+        return "상해", injury[:400]
+    first = blocks[0][1] if blocks else ""
+    return "보상", (ev_yes or first)
 
 
 PROP = ("손해", "특수건물", "화재", "도난", "임시거주비", "복구비용", "임대료", "법률비용", "차액지원", "배상", "누출")
@@ -112,7 +126,7 @@ for r in rows:
         continue
     it = json.load(open(os.path.join(OUT, "web", "items", r["id"] + ".json"), encoding="utf-8"))
     where, texts = pay_blocks(it)
-    if r["kind"] == "보통약관" and (where is None or any("위임" in t or "보장조항에서" in t for t in texts)):
+    if r["kind"] == "보통약관" and (where is None or any("위임" in t or "보장조항에서" in t for _, t in texts)):
         res.append({**r, "pay": "", "ev": "", "code": "", "how": "", "proc": "범위 밖(보통약관 지급사유 위임·없음)"})
         continue
     if where is None:
@@ -120,12 +134,16 @@ for r in rows:
     else:
         pay, ev = judge(texts)
     if r["kind"] == "보통약관":
-        first = texts[0] if texts else ""
-        if "상해" in first.split("지급합니다")[0] or "화재" in first or ("상해" in ev and "질병" not in ev.replace("질병으로 인한 사망은 제외", "")):
+        first = texts[0][1] if texts else ""
+        alltxt = " ".join(t for _, t in texts).replace("질병으로 인한 사망은 제외", "")
+        if "상해" in first.split("지급합니다")[0] or "화재" in first or ("상해" in alltxt and "질병" not in alltxt):
             res.append({**r, "pay": pay, "ev": ev[:300], "code": "", "how": "", "proc": "범위 밖(보통약관 상해·재물)"})
             continue
         m = re.search(r"([^\s]+?)\s*으?로\s*지급합니다", first)
         r = {**r, "cov": m.group(1) if m else r["cov"]}  # 보통약관은 지급 담보명으로 코드 매칭
+    if pay == "상해":
+        res.append({**r, "pay": "", "ev": ev[:300], "code": "", "how": "", "proc": "범위 밖(상해 트리거)"})
+        continue
     k = dkey(r["cov"])
     code, how = "", ""
     if k in dk:
