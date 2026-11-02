@@ -61,22 +61,19 @@ if os.path.exists(DEC_PATH):
 
 
 def evidence(c, key):
+    """열쇠말이 든 줄의 그 문장 전체(자르지 않음). 문장 경계는 '다.' 기준(소수점 오인 방지)."""
     lines = [l for b in c["bundles"] for l in b["body"].splitlines() if not l.startswith("[")] + \
             [l for b in c["bundles"] for l in b["body"].splitlines() if l.startswith("[표]")]
-    if key:
-        for l in lines:
-            if key in l:
-                s = re.sub(r"^[①-⑳]\s*", "", l)
-                i = s.find(key)
-                # 열쇠말이 든 문장의 끝(지급합니다/드립니다)까지, 없으면 열쇠말 뒤 60자
-                m = re.search(r"(지급합니다|드립니다)\.?", s[i:])
-                e = i + (m.end() if m else 60)
-                st = max(0, s.rfind(".", 0, i) + 1)
-                q = s[st:e].strip()
-                return (q[:260] + "…") if len(q) > 260 else q
+    for l in (lines if key else []):
+        if key in l:
+            s = re.sub(r"^[①-⑳]\s*", "", l)
+            i = s.find(key)
+            st = s.rfind("다.", 0, i)
+            st = st + 2 if st >= 0 else 0
+            m = re.search(r"다\.", s[i:])
+            return s[st:i + (m.end() if m else len(s) - i)].strip()
     l = next((l for l in lines if re.match(r"^[①-⑳]", l)), lines[0] if lines else "")
-    q = re.sub(r"^[①-⑳]\s*", "", l)
-    return (q[:260] + "…") if len(q) > 260 else q
+    return re.sub(r"^[①-⑳]\s*", "", l).strip()
 
 
 rows = []

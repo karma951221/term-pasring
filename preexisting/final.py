@@ -41,7 +41,70 @@ for code, (tc, td, cls, nt) in NEWC.items():
         note.append(f"세부보장별 상이 {pays['세부보장별 상이']}건(질병 세부보장 미보상)")
     note.append("담보목록 코드(이전 조사 DATA에 없음)")
     rows.append({"code": code, "name": cname.get(code, ""), "n": len(xs), "tcode": tc, "tdesc": td, "cls": cls,
-                 "ev": ev[:260] + ("…" if len(ev) > 260 else ""), "note": " · ".join(note), "new": "Y", "how": "담보목록 이름 일치"})
+                 "ev": ev, "note": " · ".join(note), "new": "Y", "how": "담보목록 이름 일치"})
+# ---- 근거 문장 다듬기: 분류 근거 항 지정 + 「보험기간 중 … 경우/때」 핵심 구간 ----
+import sys
+OUTDIR = sys.argv[1] if len(sys.argv) > 1 else ""
+dig = {c["code"]: c for c in json.load(open(os.path.join(W, "digest.json"), encoding="utf-8"))}
+OLD_KEY = {k: "통합치료(주요치료)" for k in ("COV000299", "COV000620", "COV000722", "COV000854", "COV000858")}
+OLD_KEY["COV000829"] = "진단확정 되지 않은"
+NEW_KEY = {"COV000876": "통합치료(주요치료)", "COV000877": "질병의 치료를 목적으로 요양병원", "COV000878": "질병의 치료를 목적으로 요양병원",
+           "COV000879": "으로 진단확정되고 국민건강보험공단", "COV000880": "으로 진단확정되고 국민건강보험공단", "COV000695": "직접적인 목적으로「골절탈구 도수정복술"}
+MANUAL = {"COV000329": ("…피보험자에게 다음 중 어느 하나의 사유가 발생한 경우에는 보험수익자에게 아래와 같이 보험금을 지급합니다",
+                        "지급사유 표: 【별표3】 장해 · 【별표4】 심한장해를 가지고 출생(표 글자 순서 깨짐)")}
+
+
+def sentence_with(text, key):
+    i = text.find(key)
+    if i < 0:
+        return None
+    st = text.rfind("다.", 0, i)
+    st = st + 2 if st >= 0 else 0
+    m = re.search(r"다\.", text[i:])
+    return re.sub(r"^[①-⑳\s]+", "", text[st:i + (m.end() if m else len(text) - i)]).strip()
+
+
+def core(s):
+    s = re.sub(r"\s+", " ", s or "").strip()
+    i = s.find("보험기간")
+    st = i if i >= 0 else 0
+    m = None
+    for mm in re.finditer(r"(경우|때)(에는|에|)", s[st:]):
+        pre = s[st:st + mm.start()]
+        if pre.count("(") == pre.count(")"):  # 괄호 안 '경우' 건너뜀
+            m = mm
+            break
+    en = st + m.end() if m else len(s)
+    c = s[st:en]
+    if len(c) > 220:
+        a = c.rfind(" ", 0, 80); b = c.find(" ", len(c) - 130)
+        c = c[:a if a > 40 else 80].rstrip() + " … " + c[b + 1 if b > 0 else len(c) - 130:].lstrip()
+    return ("…" if st > 0 else "") + c + (" …" if en < len(s) else "")
+
+
+def item_texts(code):
+    xs = [x for x in NJ if x.get("code") == code]
+    out = []
+    for x in xs[:2]:
+        p = os.path.join(OUTDIR, "web", "items", x["id"] + ".json")
+        if os.path.exists(p):
+            it = json.load(open(p, encoding="utf-8"))
+            out += [b.get("text", "") for a in it["arts"] for b in a["blocks"]]
+    return out
+
+
+for r in rows:
+    if r["code"] in MANUAL:
+        r["ev"], extra = MANUAL[r["code"]]
+        r["note"] = (r["note"] + " · " if r["note"] else "") + extra
+        continue
+    src = None
+    if r["code"] in OLD_KEY:
+        src = next((sentence_with(l, OLD_KEY[r["code"]]) for b in dig[r["code"]]["bundles"] for l in b["body"].splitlines()
+                    if OLD_KEY[r["code"]] in l), None)
+    elif r["code"] in NEW_KEY:
+        src = next((sentence_with(t, NEW_KEY[r["code"]]) for t in item_texts(r["code"]) if NEW_KEY[r["code"]] in t), None)
+    r["ev"] = core(src or r["ev"])
 order = {"A": 0, "C": 1, "B": 2}
 rows.sort(key=lambda r: (order[r["cls"]], r["code"]))
 TN = {"T1": "질병 진단", "T2": "질병 원인 사망·입원·수술·치료", "T3": "공적 판정·결정", "T4": "검사 시행", "T5": "출생·신생아 상태",

@@ -134,7 +134,7 @@ for r in rows:
         code, how = covname[k], "담보목록 이름 일치"
     elif user_code(r["cov"]):
         code, how = user_code(r["cov"]), "사용자 지정"
-    res.append({**r, "pay": pay, "ev": ev[:300], "where": where, "dkey": k, "affix": affix(r["cov"]), "code": code, "how": how})
+    res.append({**r, "pay": pay, "ev": ev[:1500], "where": where, "dkey": k, "affix": affix(r["cov"]), "code": code, "how": how})
 for x in res:
     if x.get("code"):
         g = code_gubun.get(x["code"])
