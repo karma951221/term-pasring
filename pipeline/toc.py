@@ -341,6 +341,11 @@ def build_items(lines, offset, page_count):
                     new_item("특별약관", ln, nm, section, None, roman=roman, no=no)
                 elif k == "general":
                     new_item("일반조항", ln, t, section, None, roman=roman, no=(f"{roman}-0" if roman else "0"))
+                elif k == "other" and re.match(r"^\s*[■□◆●①-⑳]", t) and t.endswith("특별약관"):
+                    # 번호 대신 ■ · 원문자로 특약을 나열한 목차(연금저축 등)
+                    sym_seq = sum(1 for x in items if x.get("_sym")) + 1
+                    it = new_item("특별약관", ln, re.sub(r"^\s*[■□◆●①-⑳]\s*", "", t), section, None, no=str(sym_seq))
+                    it["_sym"] = True
         elif typ == "bundle":
             bname = bx["hdr"]["text"]
             jeol_no, jeol_item = 0, None
@@ -366,4 +371,5 @@ def build_items(lines, offset, page_count):
                     new_item("특별약관", ln, nm, bname, bname, no=num)
     for it in items:
         it.pop("_removable", None)
+        it.pop("_sym", None)
     return items, bounds, box_info

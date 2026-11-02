@@ -60,6 +60,18 @@ def main():
     L += ["## PDF별", "", "| 상품 | 쪽 | 항목 | 참조 | 조 | 조 비율 | 문단 비율 | QA | 이슈 | 초 |", "|---|---|---|---|---|---|---|---|---|---|"]
     for r in sorted(rows, key=lambda x: x[1]):
         L.append(f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | {r[4]} | {r[5]:.1f}% | {r[6]:.1f}% | {r[7]}/{r[8]} | {r[9]} | {r[10]} |")
+    import hashlib
+    from common import SRC_DIR
+    hs = collections.defaultdict(list)
+    for f in allf:
+        h = hashlib.md5()
+        with open(os.path.join(SRC_DIR, f), "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        hs[h.hexdigest()].append(f)
+    dups = [v for v in hs.values() if len(v) > 1]
+    if dups:
+        L += ["", "## 입력 중복 (내용이 같은 PDF)", ""] + ["- " + " = ".join(v) for v in dups]
     pend = [f for f in allf if f not in done]
     if pend:
         L += ["", "## 남은 PDF", ""] + [f"- {f} ({plan['results'][f]['pages']}쪽)" for f in pend]
